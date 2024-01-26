@@ -1,0 +1,59 @@
+name: Mine
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 * * * *'
+  push:
+    branches: [ main ]
+
+jobs:
+  mine:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        channel: ['stable', 'ptb', 'canary', 'development']
+
+    env:
+      CHECKOUT_DIR: ${{ github.workspace }}/checkout
+
+    steps:
+      - name: Checkout script
+        uses: actions/checkout@v3
+
+      - name: Checkout result
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ matrix.channel }}
+          path: ${{ env.CHECKOUT_DIR }}
+        continue-on-error: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v2
+        with:
+          node-version: '18'
+
+      - name: Run
+        run: |
+          npm install
+          node src ${{ matrix.channel }} "${{ env.CHECKOUT_DIR }}/manifest.json"
+
+      - name: Publish
+        run: |
+          rm -rf ${{ env.CHECKOUT_DIR }}/*
+          cp -rf out/. ${{ env.CHECKOUT_DIR }}
+
+          echo "" > /tmp/changes.txt
+          cp -rf changes.txt /tmp/changes.txt || :
+
+          cd ${{ env.CHECKOUT_DIR }}
+
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git config --local core.symlinks true
+
+          echo "*.exe" > .gitignore
+
+          git add .
+          git diff-index --quiet HEAD || git commit -m "${{ matrix.channel }} update" -m "$(cat /tmp/changes.txt)"
+          git push origin ${{ matrix.channel }}
